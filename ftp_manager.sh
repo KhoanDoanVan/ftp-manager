@@ -1,210 +1,53 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-# ==========================================
-# FTP Server Management Tool
-# CentOS
-# ==========================================
+# FTP Manager - entry point. Feature implementations live in modules/.
+set -o pipefail
 
-FTP_SERVICE="vsftpd"
-FTP_CONFIG="/etc/vsftpd/vsftpd.conf"
+APP_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+source "$APP_DIR/lib/core.sh"
+source "$APP_DIR/modules/service.sh"
+source "$APP_DIR/modules/users.sh"
+source "$APP_DIR/modules/configuration.sh"
+source "$APP_DIR/modules/security.sh"
+source "$APP_DIR/modules/monitoring.sh"
+source "$APP_DIR/modules/backup.sh"
+source "$APP_DIR/modules/diagnostics.sh"
 
-show_menu() {
-
-    clear
-
-    echo "======================================"
-    echo "       FTP SERVER MANAGEMENT"
-    echo "======================================"
-    echo "1. Install FTP Server"
-    echo "2. Start FTP Server"
-    echo "3. Stop FTP Server"
-    echo "4. Restart FTP Server"
-    echo "5. Show FTP Status"
-    echo "6. Add FTP User"
-    echo "7. Delete FTP User"
-    echo "8. List FTP Users"
-    echo "9. Show Server IP"
-    echo "10. Show FTP Logs"
-    echo "0. Exit"
-    echo "======================================"
+show_main_menu() {
+    clear_screen
+    print_banner
+    printf '%s\n' \
+        "  1) Dich vu & cai dat" \
+        "  2) Quan ly nguoi dung" \
+        "  3) Cau hinh FTP" \
+        "  4) Firewall & bao mat" \
+        "  5) Giam sat & nhat ky" \
+        "  6) Sao luu & khoi phuc" \
+        "  7) Chan doan ket noi" \
+        "  8) Tong quan nhanh" \
+        "  0) Thoat"
+    print_rule
 }
 
-install_ftp() {
-
-    echo "Installing vsftpd..."
-
-    sudo dnf install vsftpd -y
-
-    sudo systemctl enable vsftpd
-    sudo systemctl start vsftpd
-
-    sudo firewall-cmd \
-        --permanent \
-        --add-service=ftp
-
-    sudo firewall-cmd --reload
-
-    echo "FTP Server installed successfully."
+main() {
+    while true; do
+        show_main_menu
+        read -r -p "Chon nhom chuc nang: " choice
+        case "$choice" in
+            1) service_menu ;;
+            2) users_menu ;;
+            3) configuration_menu ;;
+            4) security_menu ;;
+            5) monitoring_menu ;;
+            6) backup_menu ;;
+            7) diagnostics_menu ;;
+            8) quick_overview; pause_screen ;;
+            0) info "Hen gap lai."; exit 0 ;;
+            *) error "Lua chon khong hop le."; pause_screen ;;
+        esac
+    done
 }
 
-
-start_ftp() {
-    sudo systemctl start vsftpd
-    echo "FTP Server started."
-}
-
-stop_ftp() {
-    sudo systemctl stop vsftpd
-    echo "FTP Server stopped."
-}
-
-restart_ftp() {
-    sudo systemctl restart vsftpd
-    echo "FTP Server restarted."
-}
-
-status_ftp() {
-    sudo systemctl status vsftpd --no-pager
-}
-
-add_ftp_user() {
-
-    read -p "Enter FTP username: " username
-
-    if id "$username" &>/dev/null; then
-
-        echo "User $username already exists."
-
-        return
-    fi
-
-    sudo useradd -m "$username"
-
-    sudo passwd "$username"
-
-    sudo mkdir -p "/home/$username/ftp"
-
-    sudo chown -R \
-        "$username:$username" \
-        "/home/$username/ftp"
-
-    echo "FTP user '$username' created successfully."
-}
-
-delete_ftp_user() {
-
-    read -p "Enter username to delete: " username
-
-    if ! id "$username" &>/dev/null; then
-
-        echo "User does not exist."
-
-        return
-    fi
-
-    read -p \
-        "Delete $username and home directory? (y/n): " \
-        confirm
-
-    if [[ "$confirm" == "y" ]]; then
-
-        sudo userdel -r "$username"
-
-        echo "User deleted."
-
-    else
-
-        echo "Operation cancelled."
-
-    fi
-}
-
-list_ftp_users() {
-
-    echo "===== FTP Users ====="
-
-    awk -F: '$3 >= 1000 {
-        print $1 "  ->  " $6
-    }' /etc/passwd
-}
-
-show_ip() {
-
-    echo "===== Server IP ====="
-
-    hostname -I
-}
-
-show_logs() {
-
-    sudo journalctl \
-        -u vsftpd \
-        -n 30 \
-        --no-pager
-}
-
-
-while true
-do
-
-    show_menu
-
-    read -p "Choose an option: " choice
-
-    case $choice in
-
-        1)
-            install_ftp
-            ;;
-
-        2)
-            start_ftp
-            ;;
-
-        3)
-            stop_ftp
-            ;;
-
-        4)
-            restart_ftp
-            ;;
-
-        5)
-            status_ftp
-            ;;
-
-        6)
-            add_ftp_user
-            ;;
-
-        7)
-            delete_ftp_user
-            ;;
-
-        8)
-            list_ftp_users
-            ;;
-
-        9)
-            show_ip
-            ;;
-
-        10)
-            show_logs
-            ;;
-
-        0)
-            echo "Exit."
-            exit 0
-            ;;
-
-        *)
-            echo "Invalid option."
-            ;;
-
-    esac
-
-    echo
-    read -p "Press Enter to continue..."
-
-done
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
+fi
