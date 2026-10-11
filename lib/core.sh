@@ -37,16 +37,44 @@ confirm() { local answer; read -r -p "$1 [y/N]: " answer; [[ "$answer" =~ ^[Yy]$
 valid_username() { [[ "$1" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]]; }
 valid_port() { [[ "$1" =~ ^[0-9]+$ ]] && (( 10#$1 >= 1 && 10#$1 <= 65535 )); }
 valid_passive_range() { valid_port "$1" && valid_port "$2" && (( 10#$1 < 10#$2 )); }
+valid_hostname() {
+    [[ ${#1} -le 253 && "$1" =~ ^([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)(\.([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?))*$ ]]
+}
+valid_ipv4() {
+    local address="$1" octet
+    local -a octets
+    [[ "$address" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 1
+    IFS=. read -r -a octets <<< "$address"
+    for octet in "${octets[@]}"; do (( 10#$octet <= 255 )) || return 1; done
+}
+valid_ipv4_cidr() {
+    local cidr="$1" address prefix
+    [[ "$cidr" == */* ]] || return 1
+    address=${cidr%/*}; prefix=${cidr##*/}
+    valid_ipv4 "$address" && [[ "$prefix" =~ ^[0-9]+$ ]] && (( 10#$prefix <= 32 ))
+}
+
+next_backup_path() {
+    local base candidate number=1
+    base="${1}.bak.$(date +%Y%m%d-%H%M%S)"
+    candidate="$base"
+    while [[ -e "$candidate" ]]; do
+        candidate="${base}.${number}"
+        number=$((number + 1))
+    done
+    printf '%s\n' "$candidate"
+}
 
 service_is_active() { systemctl is-active --quiet "$FTP_SERVICE" 2>/dev/null; }
 config_value() {
     local key="$1"
-    [[ -r "$FTP_CONFIG" ]] || return 1
-    awk -F= -v key="$key" '$1 == key { value=$2 } END { print value }' "$FTP_CONFIG"
+    [[ -e "$FTP_CONFIG" ]] || return 1
+    as_root awk -F= -v key="$key" '$1 == key { value=$2 } END { print value }' "$FTP_CONFIG"
 }
 backup_config_file() {
     [[ -f "$FTP_CONFIG" ]] || { error "Khong tim thay $FTP_CONFIG"; return 1; }
-    local destination="${FTP_CONFIG}.bak.$(date +%Y%m%d-%H%M%S)"
+    local destination
+    destination=$(next_backup_path "$FTP_CONFIG") || return 1
     as_root cp -a "$FTP_CONFIG" "$destination" || return 1
     info "Da tao ban sao: $destination"
 }
@@ -56,7 +84,7 @@ set_config_value() {
     [[ -f "$FTP_CONFIG" ]] || { error "Khong tim thay $FTP_CONFIG"; return 1; }
     backup_config_file || return 1
     temporary=$(mktemp) || return 1
-    awk -v key="$key" -v value="$value" '
+    as_root awk -v key="$key" -v value="$value" '
         BEGIN { changed=0 }
         $0 ~ "^[#[:space:]]*" key "=" { print key "=" value; changed=1; next }
         { print }

@@ -32,17 +32,17 @@ manage_blocked_user() {
     read_username || return 1; username="$FTP_INPUT_USERNAME"
     as_root touch "$FTP_USER_LIST"
     if [[ "$action" == add ]]; then
-        grep -Fxq "$username" "$FTP_USER_LIST" || printf '%s\n' "$username" | as_root tee -a "$FTP_USER_LIST" >/dev/null
+        as_root grep -Fxq "$username" "$FTP_USER_LIST" || printf '%s\n' "$username" | as_root tee -a "$FTP_USER_LIST" >/dev/null
         success "Da them $username vao danh sach chan."
     else
         temporary=$(mktemp) || return 1
-        awk -v username="$username" '$0 != username' "$FTP_USER_LIST" > "$temporary"
+        as_root awk -v username="$username" '$0 != username' "$FTP_USER_LIST" > "$temporary"
         as_root cp "$temporary" "$FTP_USER_LIST" || { rm -f "$temporary"; return 1; }
         rm -f "$temporary"
         success "Da bo chan $username."
     fi
 }
-show_blocked_users() { [[ -r "$FTP_USER_LIST" ]] && grep -Ev '^[[:space:]]*($|#)' "$FTP_USER_LIST" || warn "Chua co danh sach."; }
+show_blocked_users() { [[ -e "$FTP_USER_LIST" ]] && as_root grep -Ev '^[[:space:]]*($|#)' "$FTP_USER_LIST" || warn "Chua co danh sach."; }
 handle_security_choice() {
     case "$1" in
         1) show_firewall ;; 2) set_ftp_firewall --add ;; 3) set_ftp_firewall --remove ;;

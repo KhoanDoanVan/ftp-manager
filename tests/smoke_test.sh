@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 export NO_COLOR=1
 source "$ROOT_DIR/lib/core.sh"
+source "$ROOT_DIR/modules/transfer.sh"
 
 failures=0
 assert_true() { "$@" || { printf 'FAIL: %s\n' "$*"; failures=$((failures + 1)); }; }
@@ -18,6 +19,32 @@ assert_false valid_port 0
 assert_false valid_port 70000
 assert_true valid_passive_range 30000 31000
 assert_false valid_passive_range 31000 30000
+assert_true valid_hostname ftp.sgu.edu.vn
+assert_false valid_hostname 'ftp server.local'
+assert_true valid_ipv4 192.168.1.120
+assert_false valid_ipv4 192.168.1.999
+assert_true valid_ipv4_cidr 192.168.1.0/24
+assert_false valid_ipv4_cidr 192.168.1.0/99
+[[ "$(lftp_quote 'folder/demo file.txt')" == '"folder/demo file.txt"' ]] || {
+    printf 'FAIL: lftp_quote\n'; failures=$((failures + 1))
+}
+assert_false lftp_quote $'bad\ncommand'
+
+# Exercise generation of a protected lftp command file without a network call.
+lftp() {
+    [[ "$1" == -f && -r "$2" ]] || return 1
+    [[ "$(stat -f '%Lp' "$2" 2>/dev/null || stat -c '%a' "$2")" == 600 ]] || return 1
+    grep -Fq 'open -p 21 -u "ftp_demo","test-password" "127.0.0.1"' "$2"
+    grep -Fq 'cls -la "/"' "$2"
+}
+TRANSFER_HOST=127.0.0.1
+TRANSFER_PORT=21
+TRANSFER_USER=ftp_demo
+TRANSFER_TLS_MODE=off
+run_lftp_command 'cls -la "/"' <<< 'test-password' >/dev/null || {
+    printf 'FAIL: run_lftp_command\n'; failures=$((failures + 1))
+}
+unset -f lftp
 
 # Exercise config reading/writing against an isolated fixture without sudo.
 TEST_TMP_DIR=$(mktemp -d)

@@ -7,8 +7,8 @@ configuration_menu_items() {
         "  9) Restart de ap dung" "  0) Quay lai"
 }
 show_effective_config() {
-    [[ -r "$FTP_CONFIG" ]] || { error "Khong doc duoc $FTP_CONFIG"; return 1; }
-    grep -Ev '^[[:space:]]*($|#)' "$FTP_CONFIG" || true
+    [[ -e "$FTP_CONFIG" ]] || { error "Khong tim thay $FTP_CONFIG"; return 1; }
+    as_root grep -Ev '^[[:space:]]*($|#)' "$FTP_CONFIG" || true
 }
 prompt_yes_no_option() {
     local key="$1" label="$2" answer

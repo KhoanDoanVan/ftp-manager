@@ -1,504 +1,545 @@
-# Hướng dẫn demo chuẩn — FTP Manager v2.0
+# Kịch bản demo - Auto Script quản lý FTP Server
 
-Tài liệu này bám sát chức năng hiện có của dự án `ftp-manager`, dùng để chuẩn bị và
-trình bày đề tài:
+Tài liệu này **chỉ dùng cho phần demo công cụ quản lý**. Không trình bày lại quá trình
+cài package, sửa `vsftpd.conf`, tạo zone BIND hoặc cấu hình firewall ban đầu.
 
-> **Xây dựng Bash script tự động hóa quản trị FTP Server trên CentOS.**
+Phần cấu hình hệ thống từ A-Z với domain `ftp.sgu.edu.vn` nằm tại
+[docs/SETUP_SGU.md](docs/SETUP_SGU.md) và phải hoàn thành trước buổi demo.
 
-## 1. Mục tiêu cần chứng minh
+## 1. Phạm vi trình bày
 
-Sau buổi demo, cần chứng minh được các nội dung sau:
+Tên đề tài nên giới thiệu là:
 
-1. Script cài đặt và điều khiển dịch vụ `vsftpd`.
-2. Quản trị được FTP user và tạo đúng cấu trúc thư mục chroot.
-3. Thay đổi được cấu hình upload, anonymous, chroot, passive port và FTPS.
-4. Đồng bộ được cấu hình FTP với `firewalld` và kiểm tra SELinux.
-5. Client đăng nhập, upload và download file thành công.
-6. Theo dõi được service, port, connection, log và dung lượng.
-7. Chạy được health check để tìm lỗi cấu hình.
-8. Sao lưu, kiểm tra và khôi phục được cấu hình.
+> **Xây dựng Auto Script quản lý FTP Server trên CentOS.**
 
-## 2. Kiến trúc demo
+Mục tiêu buổi demo là chứng minh quản trị viên có thể dùng một giao diện terminal để:
+
+- Kiểm tra tổng quan FTP Server.
+- Quản lý vòng đời dịch vụ.
+- Tạo, khóa, mở khóa và kiểm tra FTP user.
+- Gán quyền read-only hoặc read-write.
+- Upload, download và quản lý file remote.
+- Chứng minh anonymous, local user và blocked user có quyền khác nhau.
+- Theo dõi connection, socket và log.
+- Chạy health check.
+- Backup và kiểm tra archive cấu hình.
+
+Không demo các việc sau vì đã làm ở giai đoạn chuẩn bị:
+
+- Cài CentOS, `vsftpd`, BIND hoặc `lftp`.
+- Nhập toàn bộ `vsftpd.conf`.
+- Tạo zone `sgu.edu.vn`.
+- Cấu hình card mạng, DNS client hoặc firewall lần đầu.
+- Tắt firewall hay tắt SELinux.
+
+## 2. Trạng thái phải có trước khi bắt đầu
+
+Sử dụng domain và user mẫu:
 
 ```text
-┌──────────────────────┐          TCP 21 + passive ports
-│      FTP Client      │ ───────────────────────────────────┐
-│ lftp / FileZilla     │                                    │
-└──────────────────────┘                                    ▼
-                                                   ┌────────────────┐
-                                                   │ CentOS Server │
-                                                   │                │
-                                                   │ ftp_manager.sh │
-                                                   │       │        │
-                                   ┌───────────────┼───────┼───────┐
-                                   ▼               ▼       ▼       ▼
-                                vsftpd           users  firewall  logs
+FTP Server : ftp.sgu.edu.vn
+Server IP  : 192.168.154.129 (thay bằng IP thật)
+FTP port   : 21
+FTP user   : itadmin
+FTP path   : /home/itadmin/ftp/upload
+Passive    : 30000-31000
 ```
 
-Nên dùng hai máy ảo cùng một mạng:
-
-- **Server:** CentOS Stream/RHEL/Rocky/AlmaLinux, chạy project.
-- **Client:** Linux có `lftp` hoặc máy có FileZilla.
-
-Nếu chỉ có một máy, có thể test bằng `lftp` tới `127.0.0.1`, nhưng sẽ không chứng
-minh được firewall và kết nối qua mạng rõ bằng mô hình hai máy.
-
-## 3. Chuẩn bị trước buổi demo
-
-### 3.1. Thông số dùng trong tài liệu
-
-| Thông số | Giá trị mẫu |
-|---|---|
-| Server IP | `192.168.1.120` |
-| FTP user | `ftp_demo` |
-| Control port | `21` |
-| Passive range | `30000-31000` |
-| Thư mục upload | `/home/ftp_demo/ftp/upload` |
-
-Thay `192.168.1.120` bằng IP thật của máy CentOS.
-
-### 3.2. Kiểm tra hệ điều hành và mạng
-
-Chạy trên server:
-
-```bash
-cat /etc/os-release
-hostname -I
-ip -brief address
-ping -c 4 8.8.8.8
-```
-
-Ghi lại IP của card mạng mà client truy cập được. Từ client, thử:
-
-```bash
-ping -c 4 192.168.1.120
-```
-
-Nếu ping không thông, xử lý cấu hình NAT/Bridged/Host-only của máy ảo trước khi demo.
-
-### 3.3. Kiểm tra source
+Kiểm tra nhanh trước khi lên trình bày:
 
 ```bash
 cd ~/ftp-manager
-chmod +x ftp_manager.sh tests/smoke_test.sh
 bash tests/smoke_test.sh
+systemctl is-active vsftpd
+systemctl is-active named
+dig +short @127.0.0.1 ftp.sgu.edu.vn A
+sudo firewall-cmd --query-service=ftp
+sudo firewall-cmd --query-port=30000-31000/tcp
 ```
 
-Kết quả mong đợi:
+Kết quả phải có:
 
 ```text
 Smoke tests: PASS
+active
+active
+192.168.154.129
+yes
+yes
 ```
 
-Smoke test chỉ kiểm tra cú pháp Bash, validation và thao tác config trên file mẫu;
-nó không cài package hay thay đổi `/etc`.
+Chuẩn bị file demo:
 
-### 3.4. Khởi chạy chương trình
+```bash
+echo "FTP Manager upload demo" > /tmp/ftp-upload-demo.txt
+mkdir -p /tmp/ftp-demo-folder
+echo "file one" > /tmp/ftp-demo-folder/one.txt
+echo "file two" > /tmp/ftp-demo-folder/two.txt
+```
+
+## 3. Mở đầu bài demo - khoảng 1 phút
+
+Chạy:
 
 ```bash
 sudo ./ftp_manager.sh
 ```
 
-Kết quả mong đợi:
+Giới thiệu ngắn:
+
+> Project chia nghiệp vụ quản trị FTP thành các module độc lập. Entry point chỉ điều
+> hướng menu; mỗi nhóm dịch vụ, user, quyền, transfer, bảo mật, monitoring, DNS và
+> backup nằm trong một file riêng. Các thao tác thay đổi hệ thống tự dùng quyền root,
+> còn password FTP không được lưu lâu dài.
+
+Menu chính:
 
 ```text
-FTP Manager v2.0.0
-Quan tri vsftpd tren CentOS / RHEL
---------------------------------------------------
   1) Dich vu & cai dat
   2) Quan ly nguoi dung
-  3) Cau hinh FTP
-  4) Firewall & bao mat
-  5) Giam sat & nhat ky
-  6) Sao luu & khoi phuc
-  7) Chan doan ket noi
-  8) Tong quan nhanh
+  3) Quyen truy cap FTP
+  4) Cau hinh FTP
+  5) Firewall & bao mat
+  6) Giam sat & nhat ky
+  7) Truyen file FTP
+  8) DNS BIND
+  9) Sao luu & khoi phuc
+ 10) Chan doan ket noi
+ 11) Tong quan nhanh
   0) Thoat
 ```
 
-Có thể chạy script không kèm `sudo`; các thao tác thay đổi hệ thống sẽ tự gọi `sudo`.
-Chạy trực tiếp bằng `sudo` thuận tiện hơn trong lúc trình bày.
+Trong phần demo không chọn menu cài đặt `1 -> 1` hoặc tạo DNS zone mới. Hệ thống đã
+được chuẩn bị trước.
 
-## 4. Luồng demo chính
+## 4. Demo 1 - Tổng quan và trạng thái dịch vụ
 
-Ký hiệu `1 → 6` nghĩa là chọn `1` ở menu chính, sau đó chọn `6` trong submenu.
+### Thao tác
 
-### Bước 1 — Cài đặt và kiểm tra dịch vụ
+1. Chọn `11` - **Tổng quan nhanh**.
+2. Chọn `1 -> 6` - **Xem trạng thái**.
+3. Chọn `1 -> 7` - **Xem phiên bản gói**.
 
-1. Chọn `1 → 1` — **Cài đặt vsftpd**.
-2. Script dùng `dnf` hoặc `yum`, sau đó enable và start service.
-3. Nếu `firewalld` đang chạy, script tự mở service `ftp`.
-4. Chọn `1 → 6` — **Xem trạng thái**.
-5. Chọn `1 → 7` — **Xem phiên bản gói**.
+### Nội dung cần chỉ ra
 
-Kết quả cần chỉ ra:
+- Hostname của CentOS Server.
+- IP server.
+- `vsftpd` đang active.
+- Control port `21`.
+- Passive range `30000-31000`.
+- Đường dẫn `/etc/vsftpd/vsftpd.conf`.
 
-```text
-Active: active (running)
-```
+Có thể nói:
 
-Lệnh đối chiếu:
+> Thay vì nhớ nhiều lệnh `systemctl`, quản trị viên xem trạng thái và điều khiển dịch
+> vụ từ cùng một menu. Tool vẫn cung cấp start, stop, restart và enable, nhưng trong
+> demo tôi không stop để tránh làm gián đoạn các phần sau.
 
-```bash
-rpm -q vsftpd
-systemctl is-enabled vsftpd
-systemctl is-active vsftpd
-```
+## 5. Demo 2 - Quản lý user bằng auto script
 
-Các menu `1 → 2`, `1 → 3`, `1 → 4` lần lượt minh họa start, stop và restart. Không
-nên chọn stop ngay trước phần test client.
+### 5.1. Xem user đã chuẩn bị
 
-### Bước 2 — Tạo FTP user
+1. Chọn `2 -> 3` - **Liệt kê user thường**.
+2. Chỉ ra user `itadmin` và home `/home/itadmin`.
+3. Chọn `2 -> 7`, nhập `itadmin`.
 
-1. Chọn `2 → 1` — **Thêm FTP user**.
-2. Nhập username `ftp_demo`.
-3. Nhập và xác nhận password theo prompt của `passwd`.
-4. Chọn `2 → 3` để thấy user trong danh sách.
-5. Chọn `2 → 7`, nhập lại `ftp_demo` để xem FTP home.
+Kết quả phải thấy thư mục `ftp/upload`.
 
-Script tạo cấu trúc:
+### 5.2. Tạo một user demo
 
-```text
-/home/ftp_demo/ftp          root:root, mode 755
-/home/ftp_demo/ftp/upload   ftp_demo:ftp_demo
-```
+1. Chọn `2 -> 1`.
+2. Nhập `ftp_demo`.
+3. Đặt password tạm.
+4. Chọn lại `2 -> 3` để chứng minh user được tạo.
 
-Thư mục `ftp` không cho user ghi trực tiếp để phù hợp với chroot của `vsftpd`; user
-upload vào thư mục con `upload`.
-
-Lệnh đối chiếu:
-
-```bash
-id ftp_demo
-sudo ls -ld /home/ftp_demo/ftp
-sudo ls -ld /home/ftp_demo/ftp/upload
-```
-
-Lưu ý:
-
-- Username chỉ nhận chữ thường, số, `_`, `-` và tối đa 32 ký tự.
-- `2 → 4` đổi password; `2 → 5` và `2 → 6` khóa/mở khóa tài khoản.
-- `2 → 2` xóa cả user và home directory, chỉ demo ở cuối nếu thật sự cần.
-
-### Bước 3 — Cấu hình FTP cơ bản
-
-1. Chọn `3 → 1` để xem cấu hình đang có hiệu lực.
-2. Chọn `3 → 2`, nhập `yes` để đặt `write_enable=YES`.
-3. Chọn `3 → 3`, nhập `no` để đặt `anonymous_enable=NO`.
-4. Chọn `3 → 4` để đặt `chroot_local_user=YES`.
-5. Chọn `3 → 5`, nhập:
-   - Port đầu: `30000`
-   - Port cuối: `31000`
-6. Giữ control port mặc định `21`. Chỉ dùng `3 → 6` nếu muốn demo đổi port.
-7. Chọn `3 → 9` để restart và áp dụng cấu hình.
-
-Mỗi lần sửa một key, chương trình tạo một file backup dạng:
+Giải thích:
 
 ```text
-/etc/vsftpd/vsftpd.conf.bak.YYYYmmdd-HHMMSS
+/home/ftp_demo/ftp          root:root, không cho user ghi vào gốc chroot
+/home/ftp_demo/ftp/upload   ftp_demo:ftp_demo, vùng upload
 ```
 
-Kiểm tra lại bằng `3 → 1`. Các giá trị chính nên có:
+Không xóa user ngay. Giữ `ftp_demo` cho phần demo phân quyền, sau đó mới dọn dẹp.
 
-```ini
-anonymous_enable=NO
-local_enable=YES
-write_enable=YES
-chroot_local_user=YES
-pasv_enable=YES
-pasv_min_port=30000
-pasv_max_port=31000
-```
+### 5.3. Khóa và mở khóa
 
-Nếu `local_enable=YES` chưa có, dùng `3 → 8` để mở editor, thêm dòng này, lưu file rồi
-chọn `3 → 9` để restart.
+1. Chọn `2 -> 5`, nhập `ftp_demo`.
+2. Chọn `3 -> 8`, nhập `ftp_demo`; trạng thái phải là `L`.
+3. Chọn `2 -> 6` để mở khóa.
+4. Kiểm tra lại `3 -> 8`; trạng thái có password là `P`.
 
-### Bước 4 — Mở firewall và kiểm tra SELinux
+Điểm cần nhấn mạnh: khóa account không xóa dữ liệu; đây là thao tác phù hợp khi cần
+thu hồi quyền đăng nhập tạm thời.
 
-1. Chọn `4 → 2` để mở service FTP trong `firewalld`.
-2. Chọn `4 → 4` để mở passive range; nhập `30000` và `31000`.
-3. Chọn `4 → 1` để xem toàn bộ rule của zone hiện tại.
-4. Chọn `4 → 5` để xem trạng thái và các boolean FTP của SELinux.
+## 6. Demo 3 - Quản lý quyền truy cập
 
-Kết quả firewall mong đợi có:
+### 6.1. Xem ma trận quyền
+
+Chọn `3 -> 1`.
+
+Giải thích năm vai trò:
+
+1. `root/sudo admin`: quản trị server, không dùng để login FTP.
+2. Local read-write: upload/download trong `ftp/upload`.
+3. Local read-only: list/download, không upload.
+4. Anonymous: quyền phụ thuộc profile được bật.
+5. Locked/blocked: không đăng nhập được.
+
+### 6.2. Kiểm tra quyền read-write của `itadmin`
+
+1. Chọn `3 -> 6`, nhập `itadmin`.
+2. Chọn `3 -> 7`, nhập `itadmin`.
+
+Chỉ ra rằng gốc `ftp` thuộc root còn `upload` thuộc `itadmin`. Đây là cấu trúc vừa
+đáp ứng chroot vừa cho phép truyền file.
+
+## 7. Demo 4 - Upload và download hoàn toàn bằng terminal
+
+Đây là phần trọng tâm để chứng minh project không phụ thuộc FileZilla.
+
+### 7.1. Tạo profile kết nối
+
+Chọn `7 -> 2`, nhập:
 
 ```text
-services: ... ftp ...
-ports: ... 30000-31000/tcp ...
+FTP host: ftp.sgu.edu.vn
+Control port: 21
+Username: itadmin
+TLS mode: 1
 ```
 
-Lệnh đối chiếu:
+Chọn `7 -> 3` để xem profile. Tool không hiển thị hoặc lưu password.
 
-```bash
-sudo firewall-cmd --query-service=ftp
-sudo firewall-cmd --query-port=30000-31000/tcp
-getenforce
-```
+### 7.2. List remote
 
-Chỉ dùng `4 → 6` khi SELinux thực sự chặn upload trong bài lab. Tùy chọn này bật
-`ftpd_full_access`, là quyền rộng và không phải lựa chọn ưu tiên cho production.
-
-Không chọn `4 → 3` trong luồng demo chính vì chức năng đó đóng FTP trên firewall.
-
-### Bước 5 — Chạy health check trước khi kết nối
-
-Chọn `7 → 1` — **Chạy health check đầy đủ**.
-
-Tool kiểm tra sáu nhóm:
-
-1. Các command cần thiết và package `vsftpd`.
-2. Trạng thái service.
-3. Các key cấu hình quan trọng.
-4. Control port đang LISTEN.
-5. Rule FTP của firewall.
-6. Dung lượng filesystem.
-
-Kết quả quan trọng phải đạt:
-
-- `vsftpd active`.
-- Control port `21` đang LISTEN.
-- Firewall cho phép FTP.
-- Filesystem còn đủ dung lượng.
-
-`anonymous_enable=NO` là cấu hình bảo mật đúng, không phải lỗi. Menu hiển thị là
-“Kiểm tra port 21”, nhưng code sẽ dùng `listen_port` trong config nếu đã đổi port.
-
-### Bước 6 — Test FTP từ client
-
-Tạo file thử trên client:
-
-```bash
-echo "FTP Manager demo" > demo.txt
-```
-
-Nếu chưa bật TLS, kết nối bằng:
-
-```bash
-lftp -u ftp_demo 192.168.1.120
-```
-
-Trong prompt của `lftp`, chạy:
+Chọn `7 -> 4`, nhập remote path:
 
 ```text
-pwd
-ls
-cd ftp/upload
-put demo.txt
-ls
-get demo.txt -o downloaded.txt
-bye
+/
 ```
 
-Kiểm tra file tải về:
-
-```bash
-cat downloaded.txt
-```
-
-Kết quả mong đợi là nội dung `FTP Manager demo`. Trên server có thể đối chiếu:
-
-```bash
-sudo ls -lah /home/ftp_demo/ftp/upload
-```
-
-Nếu dùng FileZilla:
-
-- Protocol: FTP.
-- Host: IP server.
-- Port: `21`.
-- Logon Type: Normal.
-- User: `ftp_demo`.
-- Transfer Mode: Passive.
-
-### Bước 7 — Theo dõi trong khi client đang kết nối
-
-Giữ một client đang mở rồi dùng terminal khác chạy tool:
-
-1. Chọn `5 → 1` để xem tổng quan.
-2. Chọn `5 → 3` để xem port đang LISTEN.
-3. Chọn `5 → 4` để xem connection hiện tại.
-4. Chọn `5 → 5` để xem 50 dòng systemd journal.
-5. Chọn `5 → 7` để xem dung lượng các FTP home.
-
-`5 → 8` theo dõi journal trực tiếp; nhấn `Ctrl+C` để dừng rồi quay lại menu.
-
-`5 → 6` đọc `/var/log/xferlog`. File này chỉ có khi `vsftpd` được cấu hình ghi
-transfer log. Nếu hiện cảnh báo “Không tìm thấy”, journal ở `5 → 5` vẫn là nguồn log
-chính và đây không phải lỗi của menu.
-
-### Bước 8 — Sao lưu cấu hình
-
-1. Chọn `6 → 1` để tạo config backup.
-2. Chọn `6 → 2` để liệt kê archive.
-3. Copy đường dẫn `config-<timestamp>.tar.gz` vừa tạo.
-4. Chọn `6 → 5`, nhập đường dẫn đó để xem nội dung archive.
-
-Archive mặc định nằm tại:
+Sau đó list:
 
 ```text
-/var/backups/ftp-manager/config-YYYYmmdd-HHMMSS.tar.gz
+ftp/upload
 ```
 
-Nội dung gồm:
+### 7.3. Upload
 
-- `vsftpd.conf`.
-- `user_list` nếu file tồn tại.
-- `metadata` gồm thời gian, hostname và phiên bản tool.
+Chọn `7 -> 5`:
 
-`6 → 4` tạo archive dữ liệu từ các thư mục `/home/*/ftp`. Tool hiện chỉ backup dữ
-liệu user, không tự restore dữ liệu để tránh ghi đè ngoài ý muốn.
+```text
+Local file: /tmp/ftp-upload-demo.txt
+Remote file: ftp/upload/ftp-upload-demo.txt
+```
 
-### Bước 9 — Demo khôi phục cấu hình (tùy chọn)
+Nhập password của `itadmin`. Kết quả cần có thông báo upload thành công.
 
-Chỉ thực hiện nếu đã kiểm tra đúng archive ở bước trước:
+### 7.4. Download
 
-1. Chọn `6 → 3`.
-2. Nhập đường dẫn tuyệt đối tới `config-*.tar.gz`.
-3. Khi được hỏi ghi đè và restart, nhập `y`.
+Chọn `7 -> 6`:
 
-Trước khi ghi đè, tool tự tạo `.bak` cho config hiện tại. Sau khi cài lại file, tool
-restart `vsftpd`.
+```text
+Remote file: ftp/upload/ftp-upload-demo.txt
+Local file: /tmp/ftp-downloaded.txt
+```
+
+Đối chiếu ngoài menu:
+
+```bash
+cat /tmp/ftp-downloaded.txt
+```
+
+Nội dung phải là:
+
+```text
+FTP Manager upload demo
+```
+
+### 7.5. Quản lý file remote
+
+Thực hiện ngắn gọn:
+
+1. `7 -> 9`: tạo `ftp/upload/demo-directory`.
+2. `7 -> 10`: đổi tên thành `ftp/upload/renamed-directory`.
+3. `7 -> 7`: mirror `/tmp/ftp-demo-folder` lên
+   `ftp/upload/renamed-directory`.
+4. `7 -> 4`: list thư mục để thấy `one.txt`, `two.txt`.
+5. `7 -> 8`: mirror thư mục đó về `/tmp/ftp-mirror-download`.
+
+Không cần demo xóa file nếu thời gian ngắn. Menu `7 -> 11` có xác nhận trước khi xóa
+remote file.
+
+### 7.6. Test quyền tự động
+
+Chọn `7 -> 12`, nhập:
+
+```text
+ftp/upload
+```
+
+Kết quả cho user read-write:
+
+```text
+[OK] READ/LIST: cho phep
+[OK] WRITE/DELETE: cho phep
+```
+
+Tool tự upload một file test tạm, xóa file đó và báo hai quyền riêng biệt.
+
+## 8. Demo 5 - Chuyển user thành read-only
+
+Sử dụng `ftp_demo`, không thay đổi quyền của user chính `itadmin`.
+
+### Thao tác
+
+1. Chọn `3 -> 5`, nhập `ftp_demo` và xác nhận.
+2. Chọn `3 -> 7` để xem owner/mode.
+3. Chọn `7 -> 2`, đổi profile sang `ftp_demo`.
+4. Chọn `7 -> 12`, test tại `ftp/upload`.
 
 Kết quả mong đợi:
 
 ```text
-[OK] systemctl restart vsftpd thanh cong.
-[OK] Khoi phuc thanh cong.
+[OK] READ/LIST: cho phep
+[WARN] WRITE/DELETE: bi tu choi
 ```
 
-Sau restore, chạy lại `7 → 1` để xác nhận service, config, port và firewall.
+Giải thích:
 
-## 5. Demo FTPS tự ký — phần mở rộng
+> Tool không chỉ thay đổi một biến trong config. Nó áp dụng quyền filesystem thật,
+> vì vậy cùng một FTP Server nhưng từng user có thể có mức truy cập khác nhau.
 
-Phần này là tùy chọn. Nên hoàn thành luồng FTP thường trước rồi mới bật FTPS, vì menu
-`3 → 7` đặt `force_local_logins_ssl=YES` và `force_local_data_ssl=YES`; client FTP
-thường sẽ không đăng nhập được sau đó.
+Sau khi chứng minh, chọn `3 -> 6` cho `ftp_demo` nếu muốn trả lại quyền ghi.
 
-### 5.1. Bật FTPS
+## 9. Demo 6 - Anonymous read-only
 
-1. Chọn `3 → 7`.
-2. Tool tạo certificate tự ký tại `/etc/ssl/private/vsftpd.pem` nếu chưa có.
-3. Chọn `3 → 9` để restart.
+Anonymous đã được chuẩn bị sẵn với `/var/ftp/pub/readme.txt`.
 
-Các key được thiết lập:
+### Thao tác
 
-```ini
-ssl_enable=YES
-force_local_logins_ssl=YES
-force_local_data_ssl=YES
-rsa_cert_file=/etc/ssl/private/vsftpd.pem
-rsa_private_key_file=/etc/ssl/private/vsftpd.pem
+1. Chọn `3 -> 2` để bảo đảm anonymous ở chế độ chỉ đọc.
+2. Chọn `4 -> 9` để restart và áp dụng.
+3. Chọn `7 -> 2`:
+
+   ```text
+   Host: ftp.sgu.edu.vn
+   Port: 21
+   Username: anonymous
+   TLS: off
+   ```
+
+4. Chọn `7 -> 4`, list `/pub`.
+5. Chọn `7 -> 6`, download `/pub/readme.txt`.
+6. Chọn `7 -> 12`, test `/pub`.
+
+Kết quả:
+
+```text
+READ/LIST: cho phep
+WRITE/DELETE: bi tu choi
 ```
 
-### 5.2. Kết nối FTPS từ client
+Nếu cần minh họa hộp nhận file, menu `3 -> 3` bật anonymous upload cô lập tại
+`/var/ftp/upload`. File được tạo với `umask 077` nên anonymous khác không đọc lại
+được. Đây là phần mở rộng, không cần demo nếu thời gian giới hạn.
 
-Với certificate tự ký trong môi trường lab:
+Sau phần anonymous, chọn `3 -> 4` rồi `4 -> 9` nếu muốn tắt anonymous.
 
-```bash
-lftp -e "set ftp:ssl-force true; set ssl:verify-certificate no" \
-  -u ftp_demo 192.168.1.120
-```
+## 10. Demo 7 - Chặn user ở lớp vsftpd
 
-Chỉ tắt xác minh certificate trong lab. Hệ thống thật phải dùng certificate được CA
-tin cậy và giữ xác minh certificate ở trạng thái bật.
+Phần này khác khóa account ở hệ điều hành.
 
-## 6. Các chức năng phụ có thể trình bày
+1. Chọn `5 -> 7`, nhập `ftp_demo`.
+2. Chọn `5 -> 9` để thấy user trong `/etc/vsftpd/user_list`.
+3. Chọn `4 -> 9` để restart.
+4. Cấu hình profile transfer là `ftp_demo` và thử `7 -> 4`.
+5. Login phải bị từ chối.
+6. Chọn `5 -> 8` để bỏ chặn và restart lại.
 
-| Đường dẫn menu | Chức năng | Lưu ý |
-|---|---|---|
-| `1 → 2/3/4/5` | Start, stop, restart, enable | Start lại sau khi demo stop |
-| `2 → 4` | Đổi password | Có prompt tương tác của `passwd` |
-| `2 → 5/6` | Khóa/mở khóa user | Test login để chứng minh |
-| `4 → 7/8/9` | Chặn, bỏ chặn, xem user | Dùng `/etc/vsftpd/user_list` |
-| `7 → 2` | Kiểm tra package/command | Không thay đổi hệ thống |
-| `7 → 3` | Audit config | Hiển thị tám key quan trọng |
-| `7 → 5` | Test localhost | Anonymous tắt có thể tạo warning |
-| `7 → 7` | Kiểm tra FTP home | Hiển thị owner và mode |
+Giải thích:
 
-Danh sách chặn user giả định cấu hình CentOS mặc định:
+> Khóa bằng `usermod -L` tác động ở lớp account Linux; `user_list` là chính sách của
+> riêng vsftpd. Script quản lý được cả hai lớp.
 
-```ini
-userlist_enable=YES
-userlist_deny=YES
-```
+Phần này giả định `userlist_enable=YES` và `userlist_deny=YES`.
 
-Nếu hai key này đã bị thay đổi thủ công, ý nghĩa của `user_list` cũng thay đổi.
+## 11. Demo 8 - Monitoring trong lúc transfer
 
-## 7. Lệnh đối chiếu nhanh
+Mở terminal thứ hai và chạy `sudo ./ftp_manager.sh`. Giữ một phiên transfer hoặc
+thực hiện upload ở terminal thứ nhất.
 
-```bash
-# Package và service
-rpm -q vsftpd
-systemctl is-enabled vsftpd
-systemctl is-active vsftpd
-sudo systemctl status vsftpd --no-pager
+Trong terminal quản trị:
 
-# Config và socket
-sudo grep -Ev '^[[:space:]]*($|#)' /etc/vsftpd/vsftpd.conf
-sudo ss -ltnp | grep vsftpd
+1. `6 -> 1`: tổng quan.
+2. `6 -> 3`: port đang LISTEN.
+3. `6 -> 4`: connection FTP hiện tại.
+4. `6 -> 5`: 50 dòng journal gần nhất.
+5. `6 -> 6`: transfer log.
+6. `6 -> 7`: dung lượng FTP homes.
+7. `6 -> 8`: follow log; nhấn `Ctrl+C` để dừng.
 
-# Firewall và SELinux
-sudo firewall-cmd --list-all
-getenforce
-getsebool -a | grep -E 'ftp|ftpd'
+Nếu `/var/log/xferlog` chưa có, dùng journal. File này phụ thuộc các key
+`xferlog_enable` và `dual_log_enable` trong config nền.
 
-# User và thư mục
-id ftp_demo
-sudo passwd -S ftp_demo
-sudo ls -ld /home/ftp_demo/ftp /home/ftp_demo/ftp/upload
+## 12. Demo 9 - Health check
 
-# Log và backup
-sudo journalctl -u vsftpd -n 50 --no-pager
-sudo find /var/backups/ftp-manager -maxdepth 1 -type f -name '*.tar.gz' -ls
-```
+Chọn `10 -> 1`.
 
-## 8. Xử lý lỗi thường gặp
+Tool kiểm tra:
 
-| Hiện tượng | Nguyên nhân nên kiểm tra | Menu hỗ trợ |
-|---|---|---|
-| `Connection refused` | Service inactive hoặc sai control port | `1 → 6`, `5 → 3`, `7 → 4` |
-| Client timeout | Firewall, NAT hoặc IP sai | `4 → 1`, `7 → 6` |
-| Login sai dù password đúng | User bị khóa hoặc nằm trong `user_list` | `2 → 6`, `4 → 9` |
-| `500 OOPS: cannot change directory` | Home/permission/SELinux | `7 → 7`, `4 → 5` |
-| Login được nhưng không upload | `write_enable`, quyền `upload`, SELinux | `3 → 1`, `7 → 7` |
-| `ls` bị treo | Passive range chưa mở hoặc NAT chặn | `3 → 5`, `4 → 4` |
-| Plain FTP login hỏng sau khi bật TLS | Server đang bắt buộc FTPS | Dùng client FTPS |
-| Certificate warning | Certificate tự ký chưa được client tin | Chỉ bỏ verify trong lab |
-| Restart thất bại | Config sai cú pháp/giá trị | `5 → 5`, restore `.bak` |
-| Không có `/var/log/xferlog` | Transfer logging chưa bật | Dùng `5 → 5` journal |
-| Localhost test báo warning | Anonymous login đang bị tắt | Test bằng user từ client |
+- Commands và package bắt buộc.
+- Các tool tùy chọn như `curl`, `lftp`, `named-checkconf`, `dig`.
+- Trạng thái `vsftpd`.
+- Các key config quan trọng.
+- Control port đang LISTEN.
+- Firewall FTP.
+- Dung lượng storage.
 
-## 9. Kịch bản rollback
+Có thể mở thêm:
 
-Nếu sửa config làm service không khởi động:
+| Menu | Nội dung |
+|---|---|
+| `10 -> 3` | Audit từng key FTP |
+| `10 -> 4` | Kiểm tra control port |
+| `10 -> 6` | Xem địa chỉ mạng |
+| `10 -> 7` | Kiểm tra permission FTP homes |
 
-```bash
-sudo journalctl -u vsftpd -n 50 --no-pager
-sudo ls -1t /etc/vsftpd/vsftpd.conf.bak.* | head
-sudo cp /etc/vsftpd/vsftpd.conf.bak.TIMESTAMP /etc/vsftpd/vsftpd.conf
-sudo systemctl restart vsftpd
-```
+`10 -> 5` dùng anonymous để test localhost; khi anonymous đã tắt, warning ở bước này
+không có nghĩa local user hoặc server bị hỏng.
 
-Hoặc dùng `6 → 3` để restore từ archive config đã tạo trước đó.
+## 13. Demo 10 - Backup cấu hình
 
-## 10. Checklist trước khi kết thúc demo
+### Thao tác
 
-- [ ] `vsftpd` đã cài, enabled và active.
-- [ ] User `ftp_demo` tồn tại và đăng nhập được.
-- [ ] User bị chroot nhưng ghi được vào `ftp/upload`.
-- [ ] Upload và download thành công từ client.
-- [ ] TCP 21 và passive range đã đi qua firewall.
-- [ ] Xem được port, connection và systemd journal.
-- [ ] Health check không còn lỗi quan trọng.
-- [ ] Có config archive và xem được nội dung archive.
-- [ ] Nếu bật TLS, client đã kết nối bằng FTPS thay vì plain FTP.
+1. Chọn `9 -> 1` để tạo config archive.
+2. Chọn `9 -> 2` để liệt kê backup.
+3. Copy đường dẫn `config-<timestamp>.tar.gz` vừa tạo.
+4. Chọn `9 -> 5`, nhập đường dẫn để xem nội dung.
 
-## 11. Dọn dẹp sau demo
+Archive gồm:
 
-Nếu máy chỉ dùng cho bài lab, có thể dọn user bằng menu `2 → 2`. Thao tác này xóa cả
-home directory nên chỉ thực hiện sau khi đã backup dữ liệu cần giữ.
+- `vsftpd.conf`.
+- `user_list` nếu tồn tại.
+- Metadata gồm hostname, thời gian và phiên bản tool.
 
-Không cần gỡ `vsftpd` hoặc đóng firewall nếu máy tiếp tục được dùng làm FTP Server.
-Nếu muốn ngừng cung cấp dịch vụ, chọn `1 → 3` để stop và `4 → 3` để đóng rule FTP.
+Chỉ giải thích menu `9 -> 3` restore, không nên restore thật trong demo nếu hệ thống
+đang hoạt động ổn. Menu `9 -> 4` backup toàn bộ `/home/*/ftp`.
 
-Tài liệu kiến trúc và mô tả từng module nằm trong [docs](docs/README.md).
+## 14. DNS trong phần demo
+
+Không demo quá trình cài và tạo zone BIND. Chỉ dùng domain để chứng minh hệ thống đã
+được tích hợp.
+
+Có thể dành khoảng 30 giây:
+
+1. Chọn `8 -> 6` để cho thấy `named` đang active.
+2. Chọn `8 -> 7`:
+
+   ```text
+   FQDN: ftp.sgu.edu.vn
+   DNS server: 127.0.0.1
+   ```
+
+3. Chỉ ra kết quả trả về IP FTP Server.
+
+Không chọn `8 -> 1/2/3/4` trong demo vì đó là các công cụ setup.
+
+## 15. Kịch bản trình bày rút gọn 10-12 phút
+
+Nếu thời gian giới hạn, dùng thứ tự sau:
+
+| Thời gian | Nội dung | Menu |
+|---:|---|---|
+| 1 phút | Giới thiệu kiến trúc và tổng quan | `11` |
+| 1 phút | Service status và user list | `1 -> 6`, `2 -> 3` |
+| 1 phút | Ma trận và permission user | `3 -> 1`, `3 -> 7` |
+| 3 phút | List, upload, download, test quyền | `7 -> 4/5/6/12` |
+| 1 phút | Chuyển user read-only và test bị từ chối | `3 -> 5`, `7 -> 12` |
+| 1 phút | Anonymous read-only | `3 -> 2`, `7 -> 4/12` |
+| 1 phút | Monitoring và log | `6 -> 3/4/5` |
+| 1 phút | Health check | `10 -> 1` |
+| 1 phút | Backup và xem archive | `9 -> 1/2/5` |
+| 30 giây | DNS lookup `ftp.sgu.edu.vn` | `8 -> 7` |
+
+Nếu chỉ có 7-8 phút, bỏ phần tạo user mới, anonymous và DNS status; tập trung vào
+transfer, phân quyền, monitoring, health check và backup.
+
+## 16. Các câu hỏi phản biện thường gặp
+
+### Vì sao không dùng FileZilla?
+
+FileZilla là GUI client, còn mục tiêu đề tài là automation bằng Bash. Module transfer
+dùng `lftp` để script hóa list, upload, download, mirror và kiểm thử quyền. FileZilla
+vẫn có thể kết nối nhưng không phải thành phần chính của project.
+
+### Vì sao không tắt firewall và SELinux?
+
+Tắt chúng làm demo dễ hơn nhưng không thể hiện đúng quản trị server. Project mở đúng
+service/port trên firewall và chỉ thay SELinux boolean khi cần.
+
+### Password FTP được lưu ở đâu?
+
+Password không lưu trong profile. Mỗi thao tác hỏi lại password, ghi vào command file
+tạm mode `600`, chạy `lftp` rồi xóa file.
+
+### Vì sao gốc `ftp` thuộc root?
+
+`vsftpd` chroot không nên cho local user ghi vào gốc jail. User chỉ ghi trong thư mục
+con `upload` thuộc chính user đó.
+
+### Read-only được thực hiện như thế nào?
+
+Tool đổi owner cây FTP về `root:root` và bỏ quyền ghi. Đây là quyền filesystem thật,
+không chỉ là trạng thái hiển thị trong menu.
+
+### Anonymous upload có nguy hiểm không?
+
+Có. Vì vậy mặc định chỉ bật anonymous read-only. Khi bật upload, tool dùng thư mục
+riêng mode `733`, `anon_umask=077` và không cho anonymous đọc lại file không
+world-readable.
+
+### DNS có bắt buộc để FTP hoạt động không?
+
+Không. FTP hoạt động qua IP. BIND chỉ cung cấp tên dễ nhớ `ftp.sgu.edu.vn` và chứng
+minh khả năng tích hợp dịch vụ mạng.
+
+## 17. Xử lý lỗi ngay trong demo
+
+| Lỗi | Xử lý nhanh |
+|---|---|
+| Connection refused | `1 -> 6`, `6 -> 3`, `10 -> 4` |
+| Timeout khi list | Kiểm tra passive range bằng `4 -> 1`, firewall `5 -> 1` |
+| Login bị từ chối | `3 -> 8`, `5 -> 9`, kiểm tra password |
+| Upload bị từ chối | Xác nhận user không ở read-only; `3 -> 7`, `4 -> 1` |
+| DNS không resolve | Dùng IP tạm; kiểm tra sau bằng `8 -> 6/7` |
+| Không có `xferlog` | Dùng journal ở `6 -> 5` |
+| Health check cảnh báo anonymous | Bình thường nếu anonymous đã tắt |
+| FTPS certificate warning | Demo nền đang dùng plain FTP; không bật TLS giữa bài |
+
+Nếu lỗi không xử lý được trong 30-60 giây, chuyển sang IP `127.0.0.1` để tiếp tục
+chứng minh module transfer, rồi giải thích lỗi nằm ở mạng/DNS chứ không phải logic
+quản lý FTP.
+
+## 18. Kết thúc và dọn dữ liệu demo
+
+Sau phần trình bày:
+
+1. Bỏ chặn `ftp_demo` nếu còn trong `user_list` bằng `5 -> 8`.
+2. Mở khóa user nếu còn bị khóa bằng `2 -> 6`.
+3. Tắt anonymous bằng `3 -> 4`, restart bằng `4 -> 9` nếu không cần giữ.
+4. Chọn `2 -> 2` để xóa `ftp_demo` và home sau khi xác nhận không cần dữ liệu.
+5. Giữ user chính `itadmin` và các archive backup.
+
+## 19. Checklist trước khi đứng demo
+
+- [ ] Đã hoàn thành [setup SGU A-Z](docs/SETUP_SGU.md).
+- [ ] `ftp.sgu.edu.vn` resolve đúng IP.
+- [ ] `vsftpd` và `named` active.
+- [ ] User `itadmin` login và upload được.
+- [ ] File `/tmp/ftp-upload-demo.txt` đã tồn tại.
+- [ ] Passive ports và firewall hoạt động.
+- [ ] `bash tests/smoke_test.sh` trả về PASS.
+- [ ] Đã tập luồng demo rút gọn ít nhất một lần.
+- [ ] Không còn user demo bị khóa/chặn từ lần chạy trước.
+- [ ] Có sẵn IP `127.0.0.1` làm phương án dự phòng nếu DNS/mạng lỗi.

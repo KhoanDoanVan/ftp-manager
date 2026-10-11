@@ -7,13 +7,16 @@ ftp_manager.sh
       |
       +-- modules/service.sh
       +-- modules/users.sh
+      +-- modules/access.sh
       +-- modules/configuration.sh
       +-- modules/security.sh
       +-- modules/monitoring.sh
+      +-- modules/transfer.sh
+      +-- modules/dns.sh
       +-- modules/backup.sh
       `-- modules/diagnostics.sh
                |
-               +--> vsftpd / systemd / firewalld / SELinux / journal
+               +--> vsftpd / lftp / BIND / systemd / firewalld / SELinux / journal
 ```
 
 ## Nguyen tac tach module
@@ -37,3 +40,7 @@ ftp_manager.sh
 
 `FTP_SERVICE`, `FTP_CONFIG`, `FTP_USER_LIST`, `FTP_LOG`, `BACKUP_DIR`, `NO_COLOR`.
 Override giup test tren file tam ma khong cham vao `/etc`.
+
+DNS con cho phep override `DNS_CONFIG`, `DNS_ZONES_CONFIG`, `DNS_ZONE_DIR`. FTP
+client co the nhan gia tri dau vao tu `TRANSFER_HOST`, `TRANSFER_PORT`,
+`TRANSFER_USER`, `TRANSFER_TLS_MODE`.

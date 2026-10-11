@@ -11,10 +11,16 @@ check_dependencies() {
         if command_exists "$item"; then success "$item"; else error "$item: thieu"; missing=1; fi
     done
     if command_exists rpm && rpm -q vsftpd >/dev/null 2>&1; then success "vsftpd package da cai"; else warn "Khong xac nhan duoc vsftpd package."; fi
+    section "CONG CU TUY CHON"
+    for item in curl lftp named-checkconf dig; do
+        if command_exists "$item"; then success "$item"
+        else warn "$item: chua cai (chi can cho module lien quan)"
+        fi
+    done
     return "$missing"
 }
 audit_configuration() {
-    [[ -r "$FTP_CONFIG" ]] || { error "Khong doc duoc $FTP_CONFIG"; return 1; }
+    [[ -e "$FTP_CONFIG" ]] || { error "Khong tim thay $FTP_CONFIG"; return 1; }
     local key value
     for key in anonymous_enable local_enable write_enable chroot_local_user pasv_enable pasv_min_port pasv_max_port ssl_enable; do
         value=$(config_value "$key"); printf '%-24s %s\n' "$key" "${value:-(default/chua dat)}"
