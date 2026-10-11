@@ -11,16 +11,18 @@ Ví dụ dưới đây bám theo mô hình của nhóm trước:
 | Thành phần | Giá trị mẫu |
 |---|---|
 | FTP/DNS Server | CentOS |
-| Server IP | `192.168.154.129` |
-| LAN | `192.168.154.0/24` |
+| FTP/DNS Server IP | `192.168.10.2` (`enp26s0`, Private to My Mac) |
+| FTP/DNS LAN | `192.168.10.0/24` |
+| Internet/NAT IP | `192.168.65.129` (`enp2s0`, Share with My Mac) |
 | Domain | `sgu.edu.vn` |
 | FTP FQDN | `ftp.sgu.edu.vn` |
 | DNS host | `server.sgu.edu.vn` |
 | Local FTP user | `itadmin` |
 | Passive ports | `30000-31000` |
 
-Thay IP và LAN mẫu bằng thông số thật của máy ảo. Các bước bên dưới giả định server
-có IP cố định; không nên dùng DHCP thay đổi liên tục cho DNS Server.
+Trong máy hiện tại, `192.168.10.2` là IP cố định để Mac truy cập FTP/DNS;
+`192.168.65.129` chỉ dùng làm đường ra Internet và có thể đổi do DHCP. Bản ghi DNS
+không được trỏ tới địa chỉ NAT `192.168.65.129`.
 
 ## B. Kiểm tra hệ điều hành và mạng
 
@@ -42,7 +44,7 @@ sudo hostnamectl set-hostname server.sgu.edu.vn
 Thêm ánh xạ cục bộ để server tự nhận diện hostname:
 
 ```text
-192.168.154.129  server.sgu.edu.vn server ftp.sgu.edu.vn ftp
+192.168.10.2  server.sgu.edu.vn server ftp.sgu.edu.vn ftp
 ```
 
 Thêm dòng trên vào `/etc/hosts`, nhưng phải thay bằng IP thật nếu khác IP mẫu. Alias
@@ -215,8 +217,8 @@ sudo vi /etc/named.conf
 Trong block `options`, đặt:
 
 ```conf
-listen-on port 53 { 127.0.0.1; 192.168.154.129; };
-allow-query { localhost; 192.168.154.0/24; };
+listen-on port 53 { 127.0.0.1; 192.168.10.2; };
+allow-query { localhost; 192.168.10.0/24; };
 ```
 
 Nếu IP/LAN khác mẫu, phải thay cả hai giá trị. Không dùng `allow-query { any; };` trên
@@ -261,9 +263,9 @@ $TTL 86400
 )
 
 @       IN NS  server.sgu.edu.vn.
-@       IN A   192.168.154.129
-server  IN A   192.168.154.129
-ftp     IN A   192.168.154.129
+@       IN A   192.168.10.2
+server  IN A   192.168.10.2
+ftp     IN A   192.168.10.2
 ```
 
 Thay IP nếu cần. Mỗi lần sửa zone, tăng `serial`.
@@ -311,17 +313,17 @@ nslookup ftp.sgu.edu.vn 127.0.0.1
 Trên client:
 
 ```bash
-dig @192.168.154.129 ftp.sgu.edu.vn A
-nslookup ftp.sgu.edu.vn 192.168.154.129
+dig @192.168.10.2 ftp.sgu.edu.vn A
+nslookup ftp.sgu.edu.vn 192.168.10.2
 ```
 
-Kết quả phải trả về `192.168.154.129` hoặc IP thật đã cấu hình.
+Kết quả phải trả về `192.168.10.2`.
 
 Muốn mọi ứng dụng trên client dùng FQDN, đặt IP CentOS làm DNS Server cho kết nối mạng
 của client. Với demo ngắn có thể thêm tạm vào `/etc/hosts` của client:
 
 ```text
-192.168.154.129  ftp.sgu.edu.vn
+192.168.10.2  ftp.sgu.edu.vn
 ```
 
 ## P. Kiểm tra FTP trước buổi demo

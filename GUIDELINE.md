@@ -38,7 +38,8 @@ Sử dụng domain và user mẫu:
 
 ```text
 FTP Server : ftp.sgu.edu.vn
-Server IP  : 192.168.154.129 (thay bằng IP thật)
+FTP/DNS IP : 192.168.10.2 (enp26s0 - Private to My Mac)
+Internet   : 192.168.65.129 (enp2s0 - Share with My Mac, DHCP)
 FTP port   : 21
 FTP user   : itadmin
 FTP path   : /home/itadmin/ftp/upload
@@ -63,7 +64,7 @@ Kết quả phải có:
 Smoke tests: PASS
 active
 active
-192.168.154.129
+192.168.10.2
 yes
 yes
 ```
