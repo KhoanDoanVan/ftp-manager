@@ -3,6 +3,7 @@
 DNS_CONFIG="${DNS_CONFIG:-/etc/named.conf}"
 DNS_ZONES_CONFIG="${DNS_ZONES_CONFIG:-/etc/named.rfc1912.zones}"
 DNS_ZONE_DIR="${DNS_ZONE_DIR:-/var/named}"
+DNS_LAN_INTERFACE="${DNS_LAN_INTERFACE:-enp26s0}"
 
 dns_menu_items() {
     printf '%s\n' \
@@ -49,7 +50,10 @@ rewrite_named_option() {
 
 allow_lan_dns_queries() {
     local backup network suggested_network
-    suggested_network=$(ip route 2>/dev/null | awk '$1 ~ /^[0-9]+\./ && $1 ~ /\// {print $1; exit}')
+    suggested_network=$(ip -4 route show dev "$DNS_LAN_INTERFACE" scope link 2>/dev/null \
+        | awk '$1 ~ /^[0-9]+\./ && $1 ~ /\// {print $1; exit}')
+    [[ -n "$suggested_network" ]] || suggested_network=$(ip route 2>/dev/null \
+        | awk '$1 ~ /^[0-9]+\./ && $1 ~ /\// {print $1; exit}')
     read -r -p "Mang LAN duoc phep truy van [${suggested_network:-192.168.1.0/24}]: " network
     network=${network:-${suggested_network:-192.168.1.0/24}}
     valid_ipv4_cidr "$network" || { error "CIDR khong hop le."; return 1; }
@@ -92,7 +96,9 @@ configure_ftp_dns_record() {
     valid_hostname "$zone" && [[ "$zone" == *.* ]] || { error "Zone khong hop le."; return 1; }
     read -r -p "Ten host FTP [ftp]: " label; label=${label:-ftp}
     valid_hostname "$label" && [[ "$label" != *.* ]] || { error "Host label chi nen la mot nhan, vi du ftp."; return 1; }
-    suggested_ip=$(hostname -I 2>/dev/null | awk '{print $1}')
+    suggested_ip=$(ip -4 -o address show dev "$DNS_LAN_INTERFACE" 2>/dev/null \
+        | awk '{split($4, address, "/"); print address[1]; exit}')
+    [[ -n "$suggested_ip" ]] || suggested_ip=$(hostname -I 2>/dev/null | awk '{print $1}')
     read -r -p "IPv4 cua FTP server [${suggested_ip:-192.168.1.120}]: " ip; ip=${ip:-${suggested_ip:-192.168.1.120}}
     valid_ipv4 "$ip" || { error "IPv4 khong hop le."; return 1; }
     zone_filename="ftp-manager-${zone}.zone"; zone_path="$DNS_ZONE_DIR/$zone_filename"

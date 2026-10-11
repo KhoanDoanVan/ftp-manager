@@ -33,7 +33,7 @@ assert_false lftp_quote $'bad\ncommand'
 # Exercise generation of a protected lftp command file without a network call.
 lftp() {
     [[ "$1" == -f && -r "$2" ]] || return 1
-    [[ "$(stat -f '%Lp' "$2" 2>/dev/null || stat -c '%a' "$2")" == 600 ]] || return 1
+    [[ "$(stat -c '%a' "$2" 2>/dev/null || stat -f '%Lp' "$2")" == 600 ]] || return 1
     grep -Fq 'open -p 21 -u "ftp_demo","test-password" "127.0.0.1"' "$2"
     grep -Fq 'cls -la "/"' "$2"
 }

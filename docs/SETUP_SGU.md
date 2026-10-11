@@ -24,6 +24,9 @@ Trong máy hiện tại, `192.168.10.2` là IP cố định để Mac truy cập
 `192.168.65.129` chỉ dùng làm đường ra Internet và có thể đổi do DHCP. Bản ghi DNS
 không được trỏ tới địa chỉ NAT `192.168.65.129`.
 
+Module DNS mặc định đọc IP từ `enp26s0`. Nếu sau này VMware đổi tên interface, chạy
+tool với biến phù hợp, ví dụ `DNS_LAN_INTERFACE=enp26s0 sudo -E ./ftp_manager.sh`.
+
 ## B. Kiểm tra hệ điều hành và mạng
 
 ```bash

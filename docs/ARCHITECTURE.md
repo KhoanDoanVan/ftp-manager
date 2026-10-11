@@ -44,3 +44,6 @@ Override giup test tren file tam ma khong cham vao `/etc`.
 DNS con cho phep override `DNS_CONFIG`, `DNS_ZONES_CONFIG`, `DNS_ZONE_DIR`. FTP
 client co the nhan gia tri dau vao tu `TRANSFER_HOST`, `TRANSFER_PORT`,
 `TRANSFER_USER`, `TRANSFER_TLS_MODE`.
+
+`DNS_LAN_INTERFACE` mặc định là `enp26s0` trong mô hình hiện tại, để tool ưu tiên IP
+Private to My Mac (`192.168.10.2`) thay vì IP NAT/DHCP dùng ra Internet.
