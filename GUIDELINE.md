@@ -230,6 +230,52 @@ Sau đó list:
 ftp/upload
 ```
 
+#### Nếu gặp `ftp.sgu.edu.vn: Name or service not known`
+
+Lỗi này nghĩa là `lftp` chưa phân giải được tên `ftp.sgu.edu.vn`; đây không phải
+lỗi đăng nhập hay lỗi dịch vụ vsftpd. Có thể BIND vẫn trả lời đúng khi chạy
+`dig @127.0.0.1`, nhưng DNS resolver mặc định của CentOS chưa sử dụng BIND cục bộ.
+
+Để buổi demo ổn định, ánh xạ domain vào đúng IP FTP/DNS của máy ảo:
+
+```bash
+sudo vi /etc/hosts
+```
+
+Thêm dòng sau, không xóa các dòng có sẵn:
+
+```text
+192.168.10.2  server.sgu.edu.vn server ftp.sgu.edu.vn ftp
+```
+
+Kiểm tra hệ điều hành đã phân giải được domain:
+
+```bash
+getent hosts ftp.sgu.edu.vn
+```
+
+Kết quả mong đợi:
+
+```text
+192.168.10.2  server.sgu.edu.vn server ftp.sgu.edu.vn ftp
+```
+
+Sau đó vào lại `7 -> 4` và list `/` hoặc `ftp/upload`. Nếu IP private của VM
+không còn là `192.168.10.2`, thay IP trong `/etc/hosts` bằng kết quả của:
+
+```bash
+ip -br address show enp26s0
+```
+
+Có thể đối chiếu BIND riêng bằng:
+
+```bash
+dig @127.0.0.1 ftp.sgu.edu.vn A +short
+```
+
+Lưu ý: `/etc/hosts` là cách cố định tên miền cho máy CentOS chạy demo. Nó không
+thay thế việc cấu hình DNS cho các máy client khác.
+
 ### 7.3. Upload
 
 Chọn `7 -> 5`:
