@@ -169,6 +169,11 @@ Không xóa user ngay. Giữ `ftp_demo` cho phần demo phân quyền, sau đó 
 3. Chọn `2 -> 6` để mở khóa.
 4. Kiểm tra lại `3 -> 8`; trạng thái có password là `P`.
 
+Phải dùng `2 -> 6` cho trạng thái `L`. Menu `5 -> 8` chỉ bỏ user khỏi danh sách
+chặn của `vsftpd`, không mở khóa password của Linux. Chức năng `2 -> 6` sẽ kiểm tra
+lại trạng thái; nếu `usermod -U` chưa đủ, tool thử `passwd -u` và đề nghị đặt password
+mới khi account vẫn chưa về `P`.
+
 Điểm cần nhấn mạnh: khóa account không xóa dữ liệu; đây là thao tác phù hợp khi cần
 thu hồi quyền đăng nhập tạm thời.
 
