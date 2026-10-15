@@ -4,38 +4,86 @@ Tài liệu này dành riêng cho `version-2`. Trọng tâm demo là năm chức
 FTP Server trên máy A. Máy B chỉ dùng giao diện FileZilla để xác nhận kết quả với
 nhiều vai trò truy cập khác nhau.
 
+Menu cấp cao được cố ý rút gọn:
+
+```text
+1) Cong cu co ban
+2) Cong cu mo rong
+3) Thoat
+```
+
+Trong phần trình bày chính, chọn `1` và chỉ demo năm chức năng bắt buộc. Chỉ mở
+mục `2` khi giảng viên hỏi thêm về quản lý user, phân quyền, bảo mật, log, DNS,
+backup, chẩn đoán hoặc truyền file terminal.
+
 ## 1. Mô hình demo
+
+### 1.1. Cấu hình đã kiểm thử thành công: cùng mạng NAT
 
 ```text
 Máy A - CentOS FTP Server
-  enp2s0  : DHCP, Share with My Mac, dùng ra Internet
-  enp26s0 : 192.168.10.2/24, Private to My Mac, phục vụ FTP
-  Domain  : ftp.sgu.edu.vn -> 192.168.10.2
+  enp2s0 : 192.168.65.129/24, Share with My Mac
 
 Máy B - FTP Client
-  Cùng mạng private với máy A
-  Dùng FileZilla để list, upload và download
+  enp2s0 : 192.168.65.130/24, Share with My Mac
+
+FileZilla trên B kết nối đến: 192.168.65.129:21
 ```
 
-Card private `enp26s0` không được có default gateway. Default route phải đi qua
-card NAT `enp2s0`.
+Đây là mô hình đang hoạt động thực tế. Cả hai máy cùng subnet NAT nên máy B phải
+dùng IP NAT của máy A là `192.168.65.129`, không dùng `192.168.10.2`.
 
-Kiểm tra trên máy A:
+Kiểm tra địa chỉ trên cả hai máy:
 
 ```bash
 ip -4 -br address
 ip route
 ```
 
-Kết quả quan trọng:
+Trên máy B, kiểm tra route tới máy A:
 
-```text
-enp26s0  UP  192.168.10.2/24
-default via 192.168.65.2 dev enp2s0
+```bash
+ip route get 192.168.65.129
 ```
 
-Nếu xuất hiện default route qua `enp26s0`, sửa theo tài liệu setup của project
-trước khi demo.
+Kết quả phải đi trực tiếp qua `enp2s0`, với source `192.168.65.130`.
+
+Kiểm tra FTP banner từ máy B trước khi mở FileZilla:
+
+```bash
+timeout 5 bash -c 'exec 3<>/dev/tcp/192.168.65.129/21; head -n1 <&3'
+```
+
+Kết quả đúng:
+
+```text
+220 (vsFTPd 3.0.5)
+```
+
+### 1.2. Phương án tách mạng private
+
+Nếu muốn tách mạng FTP khỏi mạng Internet, thêm card **Private to My Mac** cho
+cả hai VM:
+
+```text
+Máy A: 192.168.10.2/24
+Máy B: 192.168.10.3/24
+```
+
+Hai card private không được có default gateway. Default route của mỗi VM vẫn phải
+đi qua card NAT. Trên máy B, kết quả đúng là:
+
+```bash
+ip route get 192.168.10.2
+```
+
+```text
+192.168.10.2 dev enp26s0 src 192.168.10.3
+```
+
+Nếu máy B chỉ có `192.168.65.130` và route tới `192.168.10.2` hiển thị
+`via 192.168.65.2`, máy B chưa có card private. Khi đó dùng `192.168.65.129` hoặc
+thêm card private; không tiếp tục dùng `192.168.10.2` trong FileZilla.
 
 ## 2. Các vai trò trong bài demo
 
@@ -63,6 +111,14 @@ Kết quả smoke test:
 ```text
 Version 2 smoke tests: PASS
 ```
+
+Sau khi chạy, chọn:
+
+```text
+1) Cong cu co ban
+```
+
+để vào menu năm chức năng được mô tả từ phần 4 đến phần 11 của guideline.
 
 ## 4. Chức năng 1 - Cài FTP Server
 
@@ -145,7 +201,9 @@ Encryption : Only use plain FTP (insecure)
 Logon Type : Anonymous
 ```
 
-Nếu domain chưa hoạt động, tạm dùng host `192.168.10.2`.
+Với mô hình NAT đã kiểm thử, nếu domain chưa hoạt động thì dùng host
+`192.168.65.129`. Chỉ dùng `192.168.10.2` khi máy B đã có card private
+`192.168.10.3/24`.
 
 Sau khi kết nối, mở remote path:
 
@@ -156,10 +214,22 @@ Sau khi kết nối, mở remote path:
 Kiểm thử role anonymous:
 
 1. Thấy `readme.txt`.
-2. Download `readme.txt` thành công.
-3. Thử upload một file và nhận lỗi permission denied.
+2. Ở khung **Local site** bên trái, chọn thư mục user có quyền ghi, ví dụ
+   `/home/simon2/Downloads`.
+3. Download `readme.txt` thành công.
+4. Thử upload một file thường từ `/home/simon2` và nhận lỗi permission denied.
 
 Đây là kết quả đúng: anonymous có thể đọc nhưng không thể sửa dữ liệu server.
+
+Không chọn các thư mục hệ thống như `/run/avahi-daemon`, `/boot` hoặc `/etc` làm
+nơi download. Nếu FileZilla báo:
+
+```text
+Could not open /run/avahi-daemon/readme.txt for writing: Permission denied
+```
+
+thì lỗi nằm ở quyền ghi local trên máy B, không phải quyền đọc FTP trên máy A.
+Hãy đổi **Local site** sang `/home/<user>/Downloads` rồi download lại.
 
 ## 7. Chức năng 3 - Thêm local-user FTP share
 
@@ -323,14 +393,19 @@ Sau đó refresh FileZilla. Đường dẫn share cũ không còn truy cập đ�
 
 ## 12. Làm cho máy B phân giải được domain
 
-Trước tiên thử IP trực tiếp trong FileZilla:
+Luôn thử IP trực tiếp trước. Với mô hình NAT đã kiểm thử:
 
 ```text
-192.168.10.2
+192.168.65.129
 ```
 
 Nếu IP kết nối được nhưng `ftp.sgu.edu.vn` không kết nối được, thêm ánh xạ hosts
-trên máy B.
+trên máy B. Domain phải trỏ đến chính IP mà máy B truy cập được:
+
+```text
+Mạng NAT hiện tại : 192.168.65.129  ftp.sgu.edu.vn
+Mạng private      : 192.168.10.2    ftp.sgu.edu.vn
+```
 
 ### Máy B là macOS hoặc Linux
 
@@ -343,7 +418,7 @@ sudo vi /etc/hosts
 Thêm **bên trong file**, không nhập dòng này như một command:
 
 ```text
-192.168.10.2  ftp.sgu.edu.vn
+192.168.65.129  ftp.sgu.edu.vn
 ```
 
 Kiểm tra:
@@ -363,7 +438,7 @@ C:\Windows\System32\drivers\etc\hosts
 Thêm:
 
 ```text
-192.168.10.2  ftp.sgu.edu.vn
+192.168.65.129  ftp.sgu.edu.vn
 ```
 
 Sau đó chạy trong Command Prompt:
@@ -377,20 +452,34 @@ ping ftp.sgu.edu.vn
 
 Nếu FileZilla báo timeout, kiểm tra theo thứ tự:
 
-1. Máy A vẫn có `192.168.10.2/24` trên `enp26s0`.
-2. Máy A và máy B nằm trên cùng VMware private network.
-3. `vsftpd` đang active.
-4. Port 21 và `30000-31000/tcp` đã mở đúng firewalld zone.
-5. FileZilla sử dụng Passive mode.
+1. Chạy `ip -4 -br address` trên cả hai máy.
+2. Nếu cùng NAT, dùng A `192.168.65.129` và B `192.168.65.130`.
+3. Nếu dùng private, A và B phải có hai IP khác nhau trong `192.168.10.0/24`.
+4. `vsftpd` đang active.
+5. Port 21 và `30000-31000/tcp` đã mở đúng firewalld zone.
+6. FileZilla sử dụng Passive mode.
 
-Trên macOS/Linux B:
+Với mô hình NAT hiện tại, chạy trên máy B:
 
 ```bash
-ping -c 2 192.168.10.2
-nc -vz 192.168.10.2 21
+ping -c 2 192.168.65.129
+timeout 5 bash -c 'exec 3<>/dev/tcp/192.168.65.129/21; head -n1 <&3'
 ```
 
-Ping có thể bị firewall chặn; kiểm tra port 21 mới là phép thử FTP quan trọng.
+Ping có thể bị firewall chặn; banner `220` mới là phép thử FTP quan trọng.
+
+Nếu localhost trên máy A nhận `220` nhưng máy B kết nối rồi chờ welcome message,
+kiểm tra `/etc/vsftpd/vsftpd.conf` trên máy A:
+
+```text
+reverse_lookup_enable=NO
+```
+
+Sau đó restart:
+
+```bash
+sudo systemctl restart vsftpd
+```
 
 Trong FileZilla chọn:
 
@@ -398,18 +487,76 @@ Trong FileZilla chọn:
 Settings > FTP > Passive mode
 ```
 
-## 14. Kịch bản demo hoàn chỉnh
+Trong FileZilla của máy B, cấu hình đã kiểm thử thành công là:
 
-1. Giới thiệu mô hình hai máy và năm menu bắt buộc.
-2. Máy A: xem trạng thái FTP bằng menu `2`.
-3. Máy A: tạo anonymous share `public`.
-4. Máy B: anonymous list/download được, upload bị từ chối.
-5. Máy A: tạo share `documents` cho `itadmin`.
-6. Máy B: `itadmin` upload, download, rename và delete được.
-7. Máy A: tạo share riêng cho `student01`.
-8. Máy B: chứng minh `student01` không nhìn thấy dữ liệu của `itadmin`.
-9. Máy A: chạy menu `5`, chỉ ra service, port và permission.
-10. Máy A: dùng menu `4` gỡ một share; máy B refresh và không còn truy cập được.
+```text
+Host       : 192.168.65.129
+Port       : 21
+Protocol   : FTP - File Transfer Protocol
+Encryption : Only use plain FTP (insecure)
+Transfer   : Passive mode
+```
+
+## 14. Công cụ mở rộng từ version 1
+
+Từ menu cấp cao, chọn:
+
+```text
+2) Cong cu mo rong
+```
+
+Chương trình mở menu version 1 với các nhóm:
+
+```text
+1)  Dich vu & cai dat
+2)  Quan ly nguoi dung
+3)  Quyen truy cap FTP
+4)  Cau hinh FTP
+5)  Firewall & bao mat
+6)  Giam sat & nhat ky
+7)  Truyen file FTP
+8)  DNS BIND
+9)  Sao luu & khoi phuc
+10) Chan doan ket noi
+11) Tong quan nhanh
+0)  Quay lai version 2
+```
+
+Các tool mở rộng vẫn giữ nguyên hành vi của version 1. Khi giảng viên cho rằng
+năm tool cơ bản còn ít, có thể mở mục này để trình bày thêm đúng nhóm được hỏi.
+Không cần demo toàn bộ vì phần chính của đề tài vẫn là quản trị server bằng năm
+chức năng cơ bản.
+
+Gợi ý chọn nhanh theo câu hỏi:
+
+| Giảng viên hỏi | Nhóm mở rộng nên mở |
+|---|---|
+| Tạo, khóa, mở khóa hoặc đổi password user | `2) Quản lý người dùng` |
+| Read-only/read-write, anonymous, user bị chặn | `3) Quyền truy cập FTP` |
+| Passive ports, TLS, chroot | `4) Cấu hình FTP` |
+| Firewall hoặc SELinux | `5) Firewall & bảo mật` |
+| Log và kết nối hiện tại | `6) Giám sát & nhật ký` |
+| Thao tác FTP không dùng FileZilla | `7) Truyền file FTP` |
+| Domain `ftp.sgu.edu.vn` | `8) DNS BIND` |
+| Sao lưu cấu hình hoặc dữ liệu | `9) Sao lưu & khôi phục` |
+| Tìm nguyên nhân lỗi | `10) Chẩn đoán kết nối` |
+
+Chọn `0` ở menu version 1 để quay lại menu cấp cao của version 2.
+
+## 15. Kịch bản demo hoàn chỉnh
+
+1. Giới thiệu menu cấp cao, chọn `1) Công cụ cơ bản`.
+2. Giới thiệu năm chức năng bắt buộc.
+3. Máy A: xem trạng thái FTP bằng menu `2`.
+4. Máy A: tạo anonymous share `public`.
+5. Máy B: anonymous list/download được, upload bị từ chối.
+6. Máy A: tạo share `documents` cho `itadmin`.
+7. Máy B: `itadmin` upload, download, rename và delete được.
+8. Máy A: tạo share riêng cho `student01`.
+9. Máy B: chứng minh `student01` không nhìn thấy dữ liệu của `itadmin`.
+10. Máy A: chạy menu `5`, chỉ ra service, port và permission.
+11. Máy A: dùng menu `4` gỡ một share; máy B refresh và không còn truy cập được.
+12. Nếu được hỏi thêm, quay lại và chọn `2) Công cụ mở rộng`.
 
 Thông điệp kết luận:
 

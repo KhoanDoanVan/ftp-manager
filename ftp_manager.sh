@@ -17,6 +17,8 @@ source "$APP_DIR/modules/backup.sh"
 source "$APP_DIR/modules/diagnostics.sh"
 
 show_main_menu() {
+    local exit_label="  0) Thoat"
+    [[ "${FTP_MANAGER_EMBEDDED:-0}" == "1" ]] && exit_label="  0) Quay lai version 2"
     clear_screen
     print_banner
     printf '%s\n' \
@@ -31,7 +33,7 @@ show_main_menu() {
         "  9) Sao luu & khoi phuc" \
         " 10) Chan doan ket noi" \
         " 11) Tong quan nhanh" \
-        "  0) Thoat"
+        "$exit_label"
     print_rule
 }
 
@@ -51,7 +53,12 @@ main() {
             9) backup_menu ;;
             10) diagnostics_menu ;;
             11) quick_overview; pause_screen ;;
-            0) info "Hen gap lai."; exit 0 ;;
+            0)
+                if [[ "${FTP_MANAGER_EMBEDDED:-0}" == "1" ]]; then info "Quay lai version 2."
+                else info "Hen gap lai."
+                fi
+                exit 0
+                ;;
             *) error "Lua chon khong hop le."; pause_screen ;;
         esac
     done

@@ -9,13 +9,35 @@ Thay vì chia thành nhiều module kỹ thuật, bản này xem mỗi thư mụ
 một **điểm chia sẻ FTP**. Quản trị viên tạo điểm chia sẻ, chọn đối tượng truy cập,
 kiểm tra và có thể gỡ điểm chia sẻ đó.
 
-Menu chỉ có năm nhóm bắt buộc:
+Menu cấp cao chỉ có ba lựa chọn:
+
+```text
+1) Cong cu co ban
+2) Cong cu mo rong
+3) Thoat
+```
+
+Nhóm **Công cụ cơ bản** giữ đúng năm chức năng bắt buộc:
 
 1. Cài đặt và cấu hình FTP Server.
 2. Bật, tắt, restart và xem trạng thái FTP.
 3. Thêm điểm chia sẻ: tạo thư mục rồi chọn anonymous hoặc local user.
 4. Xóa điểm chia sẻ do tool quản lý.
 5. Kiểm tra service, port, firewall, SELinux và permission.
+
+Nhóm **Công cụ mở rộng** mở toàn bộ tool của version 1:
+
+- Quản lý service và user chi tiết.
+- Phân quyền FTP.
+- Chỉnh cấu hình, TLS, firewall và SELinux.
+- Giám sát, log và chẩn đoán.
+- Truyền file terminal.
+- DNS BIND.
+- Backup và restore.
+
+Version 1 được chạy trong một tiến trình riêng nên không xung đột hàm hoặc cấu
+hình với năm tool cơ bản. Khi chọn `0` trong menu mở rộng, chương trình quay lại
+menu cấp cao của version 2.
 
 Máy B không cần chạy script. Việc truy cập, list, download và upload được kiểm thử
 bằng giao diện FileZilla theo [FILEZILLA_DEMO.md](docs/FILEZILLA_DEMO.md).
@@ -28,6 +50,9 @@ cd ~/ftp-manager/version-2
 chmod +x ftp_server_manager.sh
 sudo ./ftp_server_manager.sh
 ```
+
+Phải giữ nguyên cấu trúc repo vì nhóm mở rộng gọi `../ftp_manager.sh` và các
+module của version 1. Không chỉ copy riêng thư mục `version-2` sang máy A.
 
 Tool lưu danh sách điểm chia sẻ tại:
 

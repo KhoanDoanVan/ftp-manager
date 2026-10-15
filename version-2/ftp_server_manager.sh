@@ -2,6 +2,7 @@
 
 set -u
 
+readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 readonly VSFTPD_CONF="/etc/vsftpd/vsftpd.conf"
 readonly STATE_DIR="/etc/ftp-manager-v2"
 readonly SHARE_REGISTRY="$STATE_DIR/shares.tsv"
@@ -60,6 +61,7 @@ configure_baseline() {
     set_vsftpd_value no_anon_password YES
     set_vsftpd_value anon_upload_enable NO
     set_vsftpd_value anon_mkdir_write_enable NO
+    set_vsftpd_value reverse_lookup_enable NO
     set_vsftpd_value pasv_enable YES
     set_vsftpd_value pasv_min_port 30000
     set_vsftpd_value pasv_max_port 31000
@@ -268,25 +270,23 @@ check_server() {
     done < "$SHARE_REGISTRY"
 }
 
-show_menu() {
+show_basic_menu() {
     printf '\n%s\n' \
         "========================================" \
-        " FTP SERVER MANAGER - PHUONG AN 2" \
+        " CONG CU CO BAN - MAY A" \
         "========================================" \
         "1) Cai dat FTP Server" \
         "2) Bat/tat FTP Server" \
         "3) Them FTP share" \
         "4) Xoa FTP share" \
         "5) Kiem tra FTP Server" \
-        "0) Thoat"
+        "0) Quay lai"
 }
 
-main() {
+basic_tools_menu() {
     local choice
-    require_root
-    ensure_state
     while true; do
-        show_menu
+        show_basic_menu
         read -r -p "Lua chon: " choice
         case "$choice" in
             1) install_ftp_server; pause ;;
@@ -294,7 +294,44 @@ main() {
             3) add_ftp_share; pause ;;
             4) delete_ftp_share; pause ;;
             5) check_server; pause ;;
-            0) exit 0 ;;
+            0) return 0 ;;
+            *) fail "Lua chon khong hop le."; pause ;;
+        esac
+    done
+}
+
+run_advanced_tools() {
+    local version_one="$SCRIPT_DIR/../ftp_manager.sh"
+    [[ -f "$version_one" ]] || {
+        fail "Khong tim thay version 1 tai: $version_one"
+        info "Hay giu nguyen cau truc repo khi chay version 2."
+        return 1
+    }
+    info "Dang mo bo cong cu mo rong cua version 1. Chon 0 de quay lai version 2."
+    FTP_MANAGER_EMBEDDED=1 bash "$version_one"
+}
+
+show_top_menu() {
+    printf '\n%s\n' \
+        "========================================" \
+        " FTP SERVER MANAGER - PHUONG AN 2" \
+        "========================================" \
+        "1) Cong cu co ban" \
+        "2) Cong cu mo rong" \
+        "3) Thoat"
+}
+
+main() {
+    local choice
+    require_root
+    ensure_state
+    while true; do
+        show_top_menu
+        read -r -p "Lua chon cap do: " choice
+        case "$choice" in
+            1) basic_tools_menu ;;
+            2) run_advanced_tools ;;
+            3) exit 0 ;;
             *) fail "Lua chon khong hop le."; pause ;;
         esac
     done

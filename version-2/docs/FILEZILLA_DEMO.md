@@ -5,14 +5,27 @@ Script chỉ chạy trên máy A. Máy B dùng FileZilla để chứng minh FTP 
 
 ## 1. Chuẩn bị mạng
 
-Trên máy A, lấy IP private:
+Mô hình đã kiểm thử thành công dùng chung mạng NAT:
 
-```bash
-ip -4 -br address show enp26s0
+```text
+Máy A: 192.168.65.129/24
+Máy B: 192.168.65.130/24
 ```
 
-Trong mô hình hiện tại, máy A là `192.168.10.2`. Máy B phải truy cập được IP này.
-Nếu dùng domain, `ftp.sgu.edu.vn` phải phân giải về cùng IP.
+Kiểm tra trên mỗi máy:
+
+```bash
+ip -4 -br address
+```
+
+Từ máy B, kiểm tra banner:
+
+```bash
+timeout 5 bash -c 'exec 3<>/dev/tcp/192.168.65.129/21; head -n1 <&3'
+```
+
+Phải nhận `220 (vsFTPd 3.0.5)`. Nếu dùng domain, `ftp.sgu.edu.vn` trên máy B phải
+phân giải về `192.168.65.129`.
 
 ## 2. Kết nối anonymous
 
@@ -20,7 +33,7 @@ Trong FileZilla Site Manager:
 
 ```text
 Protocol   : FTP - File Transfer Protocol
-Host       : ftp.sgu.edu.vn (hoặc 192.168.10.2)
+Host       : ftp.sgu.edu.vn (hoặc 192.168.65.129)
 Port       : 21
 Encryption : Only use plain FTP (insecure)
 Logon Type : Anonymous
@@ -33,13 +46,17 @@ Kết quả cần chứng minh:
 - List và download được.
 - Upload bị từ chối vì anonymous được cấu hình read-only.
 
+Trước khi download, chọn một thư mục local có quyền ghi như
+`/home/<user>/Downloads`. Lỗi `Could not open ... for writing: Permission denied`
+với đường dẫn local như `/run/...` là lỗi quyền trên máy B, không phải lỗi FTP.
+
 ## 3. Kết nối local user
 
 Trong FileZilla Site Manager:
 
 ```text
 Protocol   : FTP - File Transfer Protocol
-Host       : ftp.sgu.edu.vn (hoặc 192.168.10.2)
+Host       : ftp.sgu.edu.vn (hoặc 192.168.65.129)
 Port       : 21
 Encryption : Only use plain FTP (insecure)
 Logon Type : Normal
@@ -71,17 +88,18 @@ Kết quả cần chứng minh:
 
 ### `Name or service not known`
 
-Thử kết nối bằng `192.168.10.2`. Nếu IP hoạt động nhưng domain không hoạt động,
+Thử kết nối bằng `192.168.65.129`. Nếu IP hoạt động nhưng domain không hoạt động,
 thêm trên máy B:
 
 ```text
-192.168.10.2  ftp.sgu.edu.vn
+192.168.65.129  ftp.sgu.edu.vn
 ```
 
 ### Connection timed out
 
 Kiểm tra máy A bằng menu `5`, đặc biệt port 21, firewalld và dải passive
-`30000-31000/tcp`. Đồng thời kiểm tra card VMware Private to My Mac.
+`30000-31000/tcp`. Nếu kết nối TCP thành công nhưng không nhận welcome message,
+đặt `reverse_lookup_enable=NO` trong `/etc/vsftpd/vsftpd.conf` rồi restart vsftpd.
 
 ### `530 Login incorrect`
 
